@@ -13,13 +13,25 @@ if (!process.env.PAYPAL_CLIENT_ID || !process.env.PAYPAL_SECRET) {
 const app = express();
 
 // CORS configuration
-const allowedOrigins = process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : ["*"];
-app.use(cors({
-  origin: allowedOrigins,
-  credentials: true,
-}));
-app.use(express.json());
+const allowedOrigins = [
+  process.env.FRONTEND_URL || "https://payments.themvpgarage.com"
+];
 
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
+
+app.options("*", cors()); // 🔥 critical for preflight
+
+app.use(express.json());
 const PORT = process.env.PORT || 3000;
 
 // PayPal live credentials
