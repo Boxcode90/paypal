@@ -16,7 +16,17 @@ const app = express();
 const allowedOrigins = [
   process.env.FRONTEND_URL || "https://payments.themvpgarage.com"
 ];
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "https://payments.themvpgarage.com");
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+
+  next();
+});
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
