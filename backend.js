@@ -14,7 +14,9 @@ const app = express();
 
 // CORS configuration
 const allowedOrigins = [
-  process.env.FRONTEND_URL || "https://payments.themvpgarage.com"
+  "https://payments.themvpgarage.com",
+  "http://127.0.0.1:5500",
+  "http://localhost:5500"
 ];
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "https://payments.themvpgarage.com");
