@@ -12,24 +12,14 @@ if (!process.env.PAYPAL_CLIENT_ID || !process.env.PAYPAL_SECRET) {
 
 const app = express();
 
-// CORS configuration
+// ✅ CORS configuration (clean + correct)
 const allowedOrigins = [
   "https://payments.themvpgarage.com",
   "http://127.0.0.1:5500",
   "http://localhost:5500"
 ];
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "https://payments.themvpgarage.com");
-  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
-
-  next();
-});
-app.use(cors({
+const corsOptions = {
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
@@ -39,21 +29,16 @@ app.use(cors({
   },
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
-}));
+};
 
-app.options("*", cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
-  },
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-})); 
+// Apply CORS
+app.use(cors(corsOptions));
+
+// Handle preflight requests properly
+app.options("*", cors(corsOptions));
 
 app.use(express.json());
+
 const PORT = process.env.PORT || 3000;
 
 // PayPal live credentials
@@ -71,6 +56,7 @@ app.get("/", (req, res) => {
 // Get access token from PayPal
 async function getAccessToken() {
   const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_SECRET}`).toString("base64");
+
   const response = await fetch(`${PAYPAL_API_BASE}/v1/oauth2/token`, {
     method: "POST",
     headers: {
@@ -81,10 +67,12 @@ async function getAccessToken() {
   });
 
   const data = await response.json();
+
   if (!data.access_token) {
     console.error("Failed to get access token:", data);
     throw new Error("PayPal authentication failed");
   }
+
   return data.access_token;
 }
 
@@ -93,18 +81,17 @@ app.post("/create-order", async (req, res) => {
   try {
     let { amount, currency } = req.body;
 
-    // Validate amount
     const numericAmount = Number(amount);
     if (isNaN(numericAmount) || numericAmount <= 0) {
       return res.status(400).json({ error: "Invalid amount. Must be a positive number." });
     }
 
-    // Validate currency
     if (!currency || !ALLOWED_CURRENCIES.includes(currency)) {
-      return res.status(400).json({ error: `Unsupported currency. Allowed: ${ALLOWED_CURRENCIES.join(", ")}` });
+      return res.status(400).json({
+        error: `Unsupported currency. Allowed: ${ALLOWED_CURRENCIES.join(", ")}`
+      });
     }
 
-    // Format amount to 2 decimal places
     const formattedAmount = numericAmount.toFixed(2);
 
     const accessToken = await getAccessToken();
@@ -136,6 +123,7 @@ app.post("/create-order", async (req, res) => {
     }
 
     res.json({ id: data.id });
+
   } catch (err) {
     console.error("Create order error:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -169,6 +157,7 @@ app.post("/capture-order", async (req, res) => {
     }
 
     res.json({ status: "COMPLETED", capture_id: data.id });
+
   } catch (err) {
     console.error("Capture order error:", err);
     res.status(500).json({ error: "Internal server error" });
