@@ -142,6 +142,6 @@ app.post("/capture-order", async (req, res) => {
 });
 
 // Start server
-app.listen((PORT, "0.0.0.0", () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 PayPal Live backend running on port ${PORT}`);
 });
