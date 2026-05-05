@@ -4,54 +4,78 @@ const cors = require("cors");
 
 dotenv.config();
 
+// Validate required environment variables
+if (!process.env.PAYPAL_CLIENT_ID || !process.env.PAYPAL_SECRET) {
+  console.error("❌ Missing required environment variables: PAYPAL_CLIENT_ID or PAYPAL_SECRET");
+  process.exit(1);
+}
+
 const app = express();
-app.use(cors());
+
+// CORS configuration
+const allowedOrigins = process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : ["*"];
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+}));
 app.use(express.json());
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
-// 🔐 ENV VARIABLES
+// PayPal live credentials
 const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
 const PAYPAL_SECRET = process.env.PAYPAL_SECRET;
+const PAYPAL_API_BASE = "https://api-m.paypal.com";
 
-// 🌐 LIVE PAYPAL BASE URL
-const BASE = "https://api-m.paypal.com";
+const ALLOWED_CURRENCIES = ["USD", "AUD", "CAD", "GBP"];
 
-// 🔑 Get access token
+// Health check endpoint
+app.get("/", (req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// Get access token from PayPal
 async function getAccessToken() {
-  const response = await fetch(`${BASE}/v1/oauth2/token`, {
+  const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_SECRET}`).toString("base64");
+  const response = await fetch(`${PAYPAL_API_BASE}/v1/oauth2/token`, {
     method: "POST",
     headers: {
-      "Authorization":
-        "Basic " +
-        Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_SECRET}`).toString("base64"),
+      Authorization: `Basic ${auth}`,
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: "grant_type=client_credentials",
   });
 
   const data = await response.json();
-
   if (!data.access_token) {
     console.error("Failed to get access token:", data);
-    throw new Error("Auth failed");
+    throw new Error("PayPal authentication failed");
   }
-
   return data.access_token;
 }
 
-// 🧾 CREATE ORDER
+// Create order
 app.post("/create-order", async (req, res) => {
   try {
-    const { amount, currency } = req.body;
+    let { amount, currency } = req.body;
 
-    if (!amount || Number(amount) <= 0) {
-      return res.status(400).json({ error: "Invalid amount" });
+    // Validate amount
+    const numericAmount = Number(amount);
+    if (isNaN(numericAmount) || numericAmount <= 0) {
+      return res.status(400).json({ error: "Invalid amount. Must be a positive number." });
     }
+
+    // Validate currency
+    if (!currency || !ALLOWED_CURRENCIES.includes(currency)) {
+      return res.status(400).json({ error: `Unsupported currency. Allowed: ${ALLOWED_CURRENCIES.join(", ")}` });
+    }
+
+    // Format amount to 2 decimal places
+    const formattedAmount = numericAmount.toFixed(2);
 
     const accessToken = await getAccessToken();
 
-    const response = await fetch(`${BASE}/v2/checkout/orders`, {
+    const response = await fetch(`${PAYPAL_API_BASE}/v2/checkout/orders`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -62,8 +86,8 @@ app.post("/create-order", async (req, res) => {
         purchase_units: [
           {
             amount: {
-              currency_code: currency || "USD",
-              value: amount,
+              currency_code: currency,
+              value: formattedAmount,
             },
           },
         ],
@@ -73,18 +97,18 @@ app.post("/create-order", async (req, res) => {
     const data = await response.json();
 
     if (!data.id) {
-      console.error("Order creation failed:", data);
-      return res.status(500).json({ error: "Order creation failed", details: data });
+      console.error("PayPal order creation failed:", data);
+      return res.status(500).json({ error: "Failed to create PayPal order" });
     }
 
-    res.json(data);
+    res.json({ id: data.id });
   } catch (err) {
     console.error("Create order error:", err);
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-// 💰 CAPTURE ORDER
+// Capture order
 app.post("/capture-order", async (req, res) => {
   try {
     const { orderID } = req.body;
@@ -95,7 +119,7 @@ app.post("/capture-order", async (req, res) => {
 
     const accessToken = await getAccessToken();
 
-    const response = await fetch(`${BASE}/v2/checkout/orders/${orderID}/capture`, {
+    const response = await fetch(`${PAYPAL_API_BASE}/v2/checkout/orders/${orderID}/capture`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -106,18 +130,18 @@ app.post("/capture-order", async (req, res) => {
     const data = await response.json();
 
     if (!data.status || data.status !== "COMPLETED") {
-      console.error("Capture failed:", data);
-      return res.status(500).json({ error: "Capture failed", details: data });
+      console.error("PayPal capture failed:", data);
+      return res.status(500).json({ error: "Failed to capture payment" });
     }
 
-    res.json(data);
+    res.json({ status: "COMPLETED", capture_id: data.id });
   } catch (err) {
-    console.error("Capture error:", err);
-    res.status(500).json({ error: "Server error" });
+    console.error("Capture order error:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-// 🚀 START SERVER
+// Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`🚀 PayPal Live backend running on port ${PORT}`);
 });
